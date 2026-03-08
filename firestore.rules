@@ -1,0 +1,176 @@
+
+/**
+ * Core Philosophy: This ruleset enforces a strict user-ownership model combined with privileged user roles (admin, faculty).
+ * All user-generated data (profiles, exam sessions, alerts) is stored in a user-specific data tree,
+ * ensuring that by default, users can only access their own information. Privileged users are granted
+ * read and write access across all user data by checking the 'role' field in their own user document.
+ *
+ * Data Structure: The primary data hierarchy is /users/{userId}, under which all related subcollections
+ * like /examSessions, /alerts, and /moduleStatuses are nested. This path-based structure is the cornerstone
+ * of the security model. Public or semi-public data like assignments and questions are in top-level collections.
+ *
+ * Key Security Decisions:
+ * - User Isolation: Users are strictly confined to their own document tree (/users/{userId}). They cannot read,
+ *   write, or even list data belonging to other users, except for public collections.
+ * - Privileged User Override: Users with a 'role' of 'admin' or 'faculty' in their /users/{userId} document
+ *   are granted full CRUD permissions on most data, essential for system administration and exam monitoring/grading.
+ * - Public Data: Collections like /questions, /studyMaterials, and /assignments are readable by any authenticated user,
+ *   but writable only by privileged users.
+ * - Submission Control: Students can create their own submissions but cannot view others' or modify their own after creation.
+ *   Faculty can view all submissions and update them (e.g., to add a grade).
+ *
+ * Denormalization for Authorization: To ensure fast and simple rules, this ruleset relies on denormalization.
+ * - The `role` field within each user's document at /users/{userId} is the source of truth for authorization checks.
+ * - Submissions contain `studentId`, `studentName`, and `assignmentTitle` for easy display and authorization.
+ *
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --------------------------------------------------------------------------------
+    // Helper Functions
+    // --------------------------------------------------------------------------------
+
+    /**
+     * Checks if the user is authenticated.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * Checks if the authenticated user has a privileged role (admin or faculty).
+     * This is determined by reading the 'role' field from their own user document.
+     * This function costs one read operation per check.
+     */
+    function isPrivilegedUser() {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return isSignedIn() && userDoc != null && ('role' in userDoc.data) && (userDoc.data.role == 'admin' || userDoc.data.role == 'faculty');
+    }
+
+    /**
+     * Checks if the authenticated user's ID matches the provided userId from the path.
+     */
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    /**
+     * Grants access if the user is the document owner OR has a privileged role.
+     */
+    function isOwnerOrPrivileged(userId) {
+      return isOwner(userId) || isPrivilegedUser();
+    }
+
+    /**
+     * Ensures a document exists for update or delete operations.
+     */
+    function isExistingDoc() {
+      return resource != null;
+    }
+
+    /**
+     * On create, validates that the user document's internal `id` field
+     * matches the document's ID in the path, ensuring relational integrity.
+     */
+    function isCreatingValidUser(userId) {
+      return request.resource.data.id == userId;
+    }
+
+    /**
+     * On update, ensures the user's internal `id` and `role` fields cannot be changed.
+     */
+    function areUserFieldsImmutable() {
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      return !changedKeys.hasAny(['id', 'role']);
+    }
+
+    /**
+     * On create, validates that the exam session's `studentId` field
+     * matches the owner's `userId` from the path.
+     */
+    function isCreatingValidExamSession(userId) {
+      return request.resource.data.studentId == userId;
+    }
+
+    /**
+     * On update, ensures the `studentId` of an exam session is immutable.
+     */
+    function isImmutableStudentId() {
+      return request.resource.data.studentId == resource.data.studentId;
+    }
+    
+    /**
+     * On create, validates that the submission's `studentId` field
+     * matches the creator's user ID.
+     */
+    function isCreatingOwnSubmission() {
+      return request.resource.data.studentId == request.auth.uid;
+    }
+    
+    /**
+     * For submission updates, ensures only privileged users can modify it,
+     * and that key fields are not changed.
+     */
+    function canUpdateSubmission() {
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      // Allow only 'grade' and 'plagiarismReportId' to be changed by privileged users.
+      return isPrivilegedUser() && !changedKeys.hasAny(['studentId', 'assignmentId', 'fileUrl', 'fileName', 'submittedAt']);
+    }
+
+    // --------------------------------------------------------------------------------
+    // Collection Rules
+    // --------------------------------------------------------------------------------
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isOwnerOrPrivileged(userId);
+      allow list: if isSignedIn() && isPrivilegedUser();
+      allow create: if isSignedIn() && isOwner(userId) && isCreatingValidUser(userId);
+      allow update: if isSignedIn() && isOwnerOrPrivileged(userId) && isExistingDoc() && areUserFieldsImmutable();
+      allow delete: if isSignedIn() && isOwnerOrPrivileged(userId) && isExistingDoc();
+    }
+
+    match /users/{userId}/examSessions/{examSessionId} {
+      allow get, list: if isSignedIn() && isOwnerOrPrivileged(userId);
+      allow create: if isSignedIn() && isOwnerOrPrivileged(userId) && isCreatingValidExamSession(userId);
+      allow update: if isSignedIn() && isOwnerOrPrivileged(userId) && isExistingDoc() && isImmutableStudentId();
+      allow delete: if isSignedIn() && isOwnerOrPrivileged(userId) && isExistingDoc();
+    }
+
+    match /users/{userId}/examSessions/{examSessionId}/alerts/{alertId} {
+      allow get, list, create, update, delete: if isSignedIn() && isOwnerOrPrivileged(userId);
+    }
+    
+    match /users/{userId}/examSessions/{examSessionId}/moduleStatuses/{moduleStatusId} {
+      allow get, list, create, update, delete: if isSignedIn() && isOwnerOrPrivileged(userId);
+    }
+
+    match /questions/{questionId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isPrivilegedUser();
+    }
+
+    match /studyMaterials/{materialId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && isPrivilegedUser();
+    }
+
+    match /previousYearQuestionPapers/{paperId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && isPrivilegedUser();
+    }
+    
+    match /assignments/{assignmentId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && isPrivilegedUser();
+    }
+
+    match /submissions/{submissionId} {
+      allow read: if isSignedIn() && (resource.data.studentId == request.auth.uid || isPrivilegedUser());
+      allow create: if isSignedIn() && isCreatingOwnSubmission();
+      allow update: if isSignedIn() && canUpdateSubmission();
+      allow delete: if isSignedIn() && isPrivilegedUser();
+    }
+  }
+}

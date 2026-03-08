@@ -1,0 +1,25 @@
+
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Rule for student submissions. The recursive wildcard {allPaths=**} is
+    // robust for the multi-step resumable upload process.
+    match /submissions/{assignmentId}/{studentId}/{allPaths=**} {
+      allow write: if request.auth != null && request.auth.uid == studentId;
+      allow read: if request.auth != null && (request.auth.uid == studentId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'faculty']);
+    }
+
+    // Rule for materials uploaded by faculty/admins (Study Materials, PYQs)
+    match /studyMaterials/{fileId}/{allPaths=**} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'faculty'];
+    }
+
+    match /previousYearQuestionPapers/{paperId}/{allPaths=**} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'faculty'];
+    }
+  }
+}

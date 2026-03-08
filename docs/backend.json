@@ -1,0 +1,410 @@
+
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user within the proctoring system.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the user."
+        },
+        "username": {
+          "type": "string",
+          "description": "User's username for login."
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address.",
+          "format": "email"
+        },
+        "role": {
+          "type": "string",
+          "description": "Role of the user.",
+          "enum": ["student", "admin", "faculty"]
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp of when the user account was created.",
+          "format": "date-time"
+        },
+        "suspicionScore": {
+            "type": "number",
+            "description": "Current suspicion score for the user's active session."
+        },
+        "status": {
+            "type": "string",
+            "description": "Current proctoring status of the user."
+        },
+        "examScore": {
+          "type": "number",
+          "description": "The score achieved by the student in the last submitted exam."
+        },
+        "examSubmitted": {
+            "type": "boolean",
+            "description": "Whether the student has submitted their exam."
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "role",
+        "createdAt",
+        "username"
+      ]
+    },
+    "ExamSession": {
+      "title": "ExamSession",
+      "type": "object",
+      "description": "Represents a single exam session for a student.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the exam session."
+        },
+        "studentId": {
+          "type": "string",
+          "description": "Reference to the Student taking the exam. (Relationship: Student 1:N ExamSession)"
+        },
+        "startTime": {
+          "type": "string",
+          "description": "Timestamp of when the exam session started.",
+          "format": "date-time"
+        },
+        "endTime": {
+          "type": "string",
+          "description": "Timestamp of when the exam session ended.",
+          "format": "date-time"
+        },
+        "suspicionScore": {
+          "type": "number",
+          "description": "Overall suspicion score for the exam session."
+        },
+        "examDetails": {
+          "type": "string",
+          "description": "Stringified object of details about the exam session itself, such as the name, time, and questions"
+        }
+      },
+      "required": [
+        "id",
+        "studentId",
+        "startTime",
+        "suspicionScore",
+        "examDetails"
+      ]
+    },
+    "Alert": {
+      "title": "Alert",
+      "type": "object",
+      "description": "Represents an alert generated during an exam session.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the alert."
+        },
+        "examSessionId": {
+          "type": "string",
+          "description": "Reference to the ExamSession this alert belongs to. (Relationship: ExamSession 1:N Alert)"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Timestamp of when the alert was generated.",
+          "format": "date-time"
+        },
+        "message": {
+          "type": "string",
+          "description": "Description of the alert (e.g., 'Face not detected')."
+        },
+        "type": {
+          "type": "string",
+          "description": "Type of alert (e.g., Info, Warning)."
+        },
+        "scoreImpact": {
+          "type": "number",
+          "description": "The amount the suspicion score increased due to this alert."
+        }
+      },
+      "required": [
+        "id",
+        "examSessionId",
+        "timestamp",
+        "message",
+        "type",
+        "scoreImpact"
+      ]
+    },
+    "ModuleStatus": {
+      "title": "ModuleStatus",
+      "type": "object",
+      "description": "Represents the status of different AI modules during an exam session.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the module status."
+        },
+        "examSessionId": {
+          "type": "string",
+          "description": "Reference to the ExamSession this module status belongs to. (Relationship: ExamSession 1:N ModuleStatus)"
+        },
+        "faceDetection": {
+          "type": "string",
+          "description": "Status of the face detection module (e.g., ACTIVE, INACTIVE, SIMULATED)."
+        },
+        "objectDetection": {
+          "type": "string",
+          "description": "Status of the object detection module."
+        },
+        "audioAnalysis": {
+          "type": "string",
+          "description": "Status of the audio analysis module."
+        },
+        "shadowDetection": {
+          "type": "string",
+          "description": "Status of the shadow detection module."
+        }
+      },
+      "required": [
+        "id",
+        "examSessionId",
+        "faceDetection",
+        "objectDetection",
+        "audioAnalysis",
+        "shadowDetection"
+      ]
+    },
+    "Question": {
+      "title": "Question",
+      "type": "object",
+      "description": "Represents a single exam question.",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The question text."
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "A list of possible answers."
+        },
+        "answer": {
+          "type": "string",
+          "description": "The correct answer."
+        }
+      },
+      "required": [
+        "text",
+        "options",
+        "answer"
+      ]
+    },
+    "StudyMaterial": {
+      "title": "StudyMaterial",
+      "type": "object",
+      "description": "Represents a single piece of study material, like a PDF or document.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title of the study material."
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief description of the material."
+        },
+        "fileUrl": {
+          "type": "string",
+          "description": "The public URL to the uploaded file in Firebase Storage.",
+          "format": "uri"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "The name of the uploaded file."
+        },
+        "fileType": {
+          "type": "string",
+          "description": "The MIME type of the file."
+        },
+        "uploadedAt": {
+          "type": "string",
+          "description": "Timestamp of when the material was uploaded.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "title",
+        "fileUrl",
+        "fileName",
+        "uploadedAt"
+      ]
+    },
+    "PreviousYearQuestionPaper": {
+      "title": "PreviousYearQuestionPaper",
+      "type": "object",
+      "description": "Represents a single previous year question paper.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title or year of the question paper."
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief description of the paper (e.g., course name)."
+        },
+        "fileUrl": {
+          "type": "string",
+          "description": "The public URL to the uploaded file in Firebase Storage.",
+          "format": "uri"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "The name of the uploaded file."
+        },
+        "fileType": {
+          "type": "string",
+          "description": "The MIME type of the file."
+        },
+        "uploadedAt": {
+          "type": "string",
+          "description": "Timestamp of when the paper was uploaded.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "title",
+        "fileUrl",
+        "fileName",
+        "uploadedAt"
+      ]
+    },
+    "Assignment": {
+      "title": "Assignment",
+      "type": "object",
+      "description": "Represents an assignment created by faculty.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title of the assignment."
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief description of the assignment."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp of when the assignment was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "title",
+        "createdAt"
+      ]
+    },
+    "Submission": {
+      "title": "Submission",
+      "type": "object",
+      "description": "Represents a student's submission for an assignment.",
+      "properties": {
+        "assignmentId": {
+          "type": "string",
+          "description": "Reference to the Assignment."
+        },
+        "assignmentTitle": {
+            "type": "string",
+            "description": "Denormalized title of the assignment."
+        },
+        "studentId": {
+          "type": "string",
+          "description": "Reference to the Student who submitted."
+        },
+        "studentName": {
+            "type": "string",
+            "description": "Denormalized name of the student."
+        },
+        "fileUrl": {
+          "type": "string",
+          "description": "URL of the submitted file in Firebase Storage.",
+          "format": "uri"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Name of the submitted file."
+        },
+        "submittedAt": {
+          "type": "string",
+          "description": "Timestamp of the submission.",
+          "format": "date-time"
+        },
+        "grade": {
+          "type": "number",
+          "description": "The grade given by the faculty, out of 100."
+        }
+      },
+      "required": [
+        "assignmentId",
+        "studentId",
+        "studentName",
+        "fileUrl",
+        "fileName",
+        "submittedAt"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password"
+    ]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profile information. Path-based ownership ensures only the user or an admin can access the data."
+    },
+    "/users/{userId}/examSessions/{examSessionId}": {
+      "schema": { "$ref": "#/entities/ExamSession" },
+      "description": "Stores exam session data for a student. Includes denormalized 'studentId' for authorization independence. Path-based ownership ensures only the user or an admin can access the data."
+    },
+    "/users/{userId}/examSessions/{examSessionId}/alerts/{alertId}": {
+      "schema": { "$ref": "#/entities/Alert" },
+      "description": "Stores alerts generated during an exam session. Path-based ownership ensures only the user or an admin can access the data."
+    },
+    "/users/{userId}/examSessions/{examSessionId}/moduleStatuses/{moduleStatusId}": {
+      "schema": { "$ref": "#/entities/ModuleStatus" },
+      "description": "Stores statuses of AI modules during an exam session. Path-based ownership ensures only the user or an admin can access the data."
+    },
+    "/questions/{questionId}": {
+      "schema": {
+        "$ref": "#/entities/Question"
+      },
+      "description": "Stores all exam questions. Admins can manage these, and students can read them during an exam."
+    },
+    "/studyMaterials/{materialId}": {
+      "schema": {
+        "$ref": "#/entities/StudyMaterial"
+      },
+      "description": "Stores study materials. Admins/faculty can create and delete, while students can read."
+    },
+    "/previousYearQuestionPapers/{paperId}": {
+      "schema": {
+        "$ref": "#/entities/PreviousYearQuestionPaper"
+      },
+      "description": "Stores previous year question papers. Admins/faculty can create and delete, while students can read."
+    },
+    "/assignments/{assignmentId}": {
+      "schema": {
+        "$ref": "#/entities/Assignment"
+      },
+      "description": "Stores assignments created by faculty. Admins/faculty can write, students can read."
+    },
+    "/submissions/{submissionId}": {
+      "schema": {
+        "$ref": "#/entities/Submission"
+      },
+      "description": "Stores student submissions for assignments. Students create their own, faculty can read all and grade them."
+    }
+  }
+}
+
+    
