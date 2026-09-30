@@ -39,6 +39,53 @@ export type Question = {
     text: string;
     options: string[];
     answer: string;
+    questionBankId?: string;
+    marks?: number;
+    subject?: string;
+    topic?: string;
+    difficulty?: 'Easy' | 'Medium' | 'Hard';
+    collegeId?: string;
+    departmentId?: string;
+    branchId?: string;
+    year?: number;
+    createdByFacultyId?: string;
+    createdAt?: string;
+    updatedAt?: string;
+};
+
+export type QuestionBank = {
+    id: string;
+    title: string;
+    subject: string;
+    collegeId: string;
+    departmentId?: string;
+    branchId?: string;
+    year?: number;
+    createdByFacultyId: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type Exam = {
+    id: string;
+    title: string;
+    description: string;
+    subject: string;
+    collegeId: string;
+    departmentId?: string;
+    branchId?: string;
+    year?: number;
+    divisionId?: string;
+    facultyId: string;
+    questionBankId: string;
+    duration: number;
+    startTime: string;
+    endTime: string;
+    totalMarks: number;
+    passingMarks: number;
+    status: 'DRAFT' | 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+    createdAt: string;
+    updatedAt: string;
 };
 
 export type StudyMaterial = {
@@ -97,4 +144,52 @@ export type PlagiarismResult = {
     fingerprint: string;
 };
 
-    
+export type College = {
+    id: string;
+    collegeName: string;
+    collegeCode: string;
+    emailDomain: string;
+    address: string;
+    city: string;
+    state: string;
+    status: 'ACTIVE' | 'INACTIVE';
+    collegeAdminId?: string;
+    createdAt: string; // ISO date string
+    updatedAt: string; // ISO date string
+};
+
+export type Department = {
+    id: string;
+    collegeId: string;
+    name: string;
+};
+
+export type Branch = {
+    id: string;
+    departmentId: string;
+    name: string;
+};
+
+export type Division = {
+    id: string;
+    branchId: string;
+    year: number;
+    name: string;
+};
+
+export type UserRole = 'PLATFORM_ADMIN' | 'COLLEGE_ADMIN' | 'FACULTY' | 'STUDENT';
+
+export type UserProfile = {
+    uid: string;
+    email: string;
+    name: string;
+    role: UserRole;
+    collegeId?: string;
+    departmentId?: string;
+    branchId?: string;
+    year?: number;
+    divisionId?: string;
+    status: 'ACTIVE' | 'INACTIVE' | 'PENDING';
+    createdAt: string;
+    updatedAt: string;
+};

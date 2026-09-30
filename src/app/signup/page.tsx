@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -15,17 +14,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Shield, Loader2 } from 'lucide-react';
 import { useAuth, useFirestore } from '@/firebase';
-import { setDoc } from 'firebase/firestore';
-import { doc } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { setDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 
-type Role = 'student' | 'admin' | 'faculty';
-
-function SignupForm() {
+export default function SignupPage() {
   const router = useRouter();
   const { toast } = useToast();
   const auth = useAuth();
@@ -34,120 +29,157 @@ function SignupForm() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<Role>('student');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [invitationCode, setInvitationCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username) {
-        toast({
-            variant: "destructive",
-            title: "Sign Up Failed",
-            description: "Please enter a username.",
-        });
+    if (!username || !email || !password || !invitationCode) {
+        toast({ variant: "destructive", title: "Missing Fields", description: "All fields are required." });
         return;
     }
+    if (password !== confirmPassword) {
+        toast({ variant: "destructive", title: "Password Mismatch", description: "Passwords do not match." });
+        return;
+    }
+
     setIsLoading(true);
 
     try {
+      if (!firestore) throw new Error("Database not connected");
+
+      // 1. Validate Invitation Code
+      const invRef = doc(firestore, 'invitations', invitationCode);
+      const invSnap = await getDoc(invRef);
+
+      if (!invSnap.exists()) {
+        throw new Error("Invalid invitation code.");
+      }
+      
+      const invData = invSnap.data();
+      
+      if (invData.status !== 'PENDING') {
+        throw new Error("This invitation code has already been used.");
+      }
+      
+      if (new Date() > new Date(invData.expiresAt)) {
+        throw new Error("This invitation code has expired.");
+      }
+      
+      if (invData.email.trim().toLowerCase() !== email.trim().toLowerCase()) {
+        throw new Error(`This invitation is for ${invData.email}. Please use that email.`);
+      }
+
+      // 2. Create Auth Account
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
+      await sendEmailVerification(user);
+
+      // 3. Create User Document locked to the authorized scope
       const userDocRef = doc(firestore, "users", user.uid);
       await setDoc(userDocRef, {
+        uid: user.uid,
         id: user.uid,
+        name: username,
         username: username,
         email: user.email,
-        role: role,
+        role: invData.role || "STUDENT",
+        collegeId: invData.collegeId || null,
+        departmentId: invData.departmentId || null,
+        branchId: invData.branchId || null,
+        yearId: invData.yearId || null,
+        divisionId: invData.divisionId || null,
+        facultyId: invData.facultyId || null,
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         suspicionScore: 0,
-        status: 'Clear'
+        status: 'ACTIVE'
+      });
+
+      // 4. Invalidate the invitation
+      await updateDoc(invRef, {
+        status: 'USED',
+        usedByUid: user.uid,
+        usedAt: new Date().toISOString()
       });
 
       toast({
         title: "Account Created",
-        description: "Redirecting to login...",
+        description: "Registration successful! Please check your email to verify your account.",
       });
       router.push('/login');
     } catch (error: any) {
-      let description = "Could not create account.";
+      console.error("Signup error:", error);
+      let description = error.message;
       if (error.code === 'auth/email-already-in-use') {
-        description = "This email address is already in use.";
+        description = "This email address is already registered.";
       } else if (error.code === 'auth/weak-password') {
         description = "The password is too weak. It must be at least 6 characters long.";
-      } else {
-        description = error.message;
       }
-      toast({
-        variant: "destructive",
-        title: "Sign Up Failed",
-        description: description,
-      });
+      toast({ variant: "destructive", title: "Sign Up Failed", description: description });
     } finally {
         setIsLoading(false);
     }
   };
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="font-headline">Create Account</CardTitle>
-        <CardDescription>Enter your details to create a new account.</CardDescription>
-      </CardHeader>
-      <form onSubmit={handleSubmit}>
-        <CardContent className="space-y-4">
-           <div className="space-y-2">
-            <Label htmlFor="username">Username</Label>
-            <Input id="username" type="text" placeholder="yourusername" required value={username} onChange={(e) => setUsername(e.target.value)} disabled={isLoading} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" placeholder="user@procto.vision" required value={email} onChange={(e) => setEmail(e.target.value)} disabled={isLoading} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password" disabled={isLoading}/>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="role">Role</Label>
-            <Select onValueChange={(value: Role) => setRole(value)} defaultValue={role} disabled={isLoading}>
-                <SelectTrigger id="role">
-                    <SelectValue placeholder="Select a role" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="student">Student</SelectItem>
-                    <SelectItem value="admin">Admin / Invigilator</SelectItem>
-                    <SelectItem value="faculty">Faculty / Evaluator</SelectItem>
-                </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-        <CardFooter className="flex-col gap-4">
-          <Button type="submit" className="w-full bg-secondary hover:bg-secondary/90 text-secondary-foreground" disabled={isLoading}>
-            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isLoading ? 'Creating Account...' : 'Sign Up'}
-          </Button>
-           <p className="text-sm text-muted-foreground">
-            Already have an account? <Link href="/login" className="text-primary hover:underline">Sign in</Link>
-          </p>
-        </CardFooter>
-      </form>
-    </Card>
-  );
-}
+    <div className="flex items-center justify-center min-h-screen bg-background p-4 relative overflow-hidden">
+        {/* Background blobs */}
+        <div className="absolute top-0 -left-40 w-96 h-96 bg-primary/20 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob"></div>
+        <div className="absolute top-0 -right-40 w-96 h-96 bg-blue-400/20 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000"></div>
+        <div className="absolute -bottom-40 left-20 w-96 h-96 bg-purple-400/20 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-4000"></div>
 
-export default function SignupPage() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 md:p-12 lg:p-24 bg-background">
-      <div className="flex flex-col items-center justify-center w-full max-w-md">
-        <div className="flex items-center gap-4 mb-8">
-            <Shield className="w-12 h-12 text-primary" />
-            <h1 className="text-4xl font-bold font-headline text-foreground">
-                MyProctor.ai
-            </h1>
+        <div className="w-full max-w-md z-10 relative">
+            <div className="text-center mb-8 flex flex-col items-center">
+                <div className="bg-background p-3 rounded-full shadow-lg border border-border/50 mb-4 inline-flex">
+                    <Shield className="w-10 h-10 text-primary" />
+                </div>
+                <h1 className="text-3xl font-bold tracking-tight font-headline">MyProctor.ai</h1>
+                <p className="text-muted-foreground mt-2">Complete Student Registration</p>
+            </div>
+
+            <Card className="w-full shadow-xl border-border/50 backdrop-blur-sm bg-card/90">
+              <CardHeader>
+                <CardTitle className="font-headline">Create Account</CardTitle>
+                <CardDescription>Activate your secure student account.</CardDescription>
+              </CardHeader>
+              <form onSubmit={handleSubmit}>
+                <CardContent className="space-y-4">
+                   <div className="space-y-2">
+                     <Label htmlFor="invitation">Invitation Code</Label>
+                     <Input id="invitation" placeholder="Paste your 20-character code" value={invitationCode} onChange={(e) => setInvitationCode(e.target.value)} required className="font-mono text-sm bg-muted/50" />
+                   </div>
+                   <div className="space-y-2">
+                     <Label htmlFor="email">Email</Label>
+                     <Input id="email" type="email" placeholder="john@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                   </div>
+                   <div className="space-y-2">
+                     <Label htmlFor="username">Full Name</Label>
+                     <Input id="username" placeholder="John Doe" value={username} onChange={(e) => setUsername(e.target.value)} required />
+                   </div>
+                   <div className="space-y-2">
+                     <Label htmlFor="password">Password</Label>
+                     <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                   </div>
+                   <div className="space-y-2">
+                     <Label htmlFor="confirmPassword">Confirm Password</Label>
+                     <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+                   </div>
+                </CardContent>
+                <CardFooter className="flex flex-col gap-4 mt-2">
+                  <Button type="submit" className="w-full h-11 text-base font-semibold shadow-md transition-all hover:shadow-lg" disabled={isLoading}>
+                    {isLoading ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Verifying...</> : 'Activate Account'}
+                  </Button>
+                  <p className="text-sm text-center text-muted-foreground">
+                    Already have an account?{' '}
+                    <Link href="/login" className="text-primary hover:underline font-medium">Log in</Link>
+                  </p>
+                </CardFooter>
+              </form>
+            </Card>
         </div>
-        <SignupForm />
-      </div>
-    </main>
+    </div>
   );
 }

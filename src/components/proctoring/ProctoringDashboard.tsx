@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Shield, PlayCircle, PauseCircle, Camera, Mic, MicOff, RotateCcw, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import VideoFeed from '@/components/proctoring/VideoFeed';
@@ -13,6 +13,8 @@ import { Alert as AlertBox, AlertTitle, AlertDescription } from '@/components/ui
 import { useFirestore, useUser, useAuth } from '@/firebase';
 import { doc, onSnapshot, runTransaction, updateDoc, getDoc, collection, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
+import { VisionAgent } from '@/lib/agents/visionAgent';
+import { AudioAgent } from '@/lib/agents/audioAgent';
 
 const INITIAL_STATE: ProctoringState = {
   suspicionScore: 0,
@@ -28,12 +30,14 @@ const INITIAL_STATE: ProctoringState = {
   },
 };
 
-export function ProctoringDashboard() {
+export function ProctoringDashboard({ examId }: { examId?: string | null }) {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [state, setState] = useState<ProctoringState>(INITIAL_STATE);
+  const [userData, setUserData] = useState<any>(null);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [examSessionId, setExamSessionId] = useState<string | null>(null);
 
   const { toast } = useToast();
@@ -41,24 +45,40 @@ export function ProctoringDashboard() {
   const firestore = useFirestore();
   const router = useRouter();
   const auth = useAuth();
+  
+  const eventBufferRef = React.useRef<{ type: string, description: string, timestamp: string }[]>([]);
 
-
-  useEffect(() => {
-    if (!user || !firestore) return;
-
-    const userDocRef = doc(firestore, 'users', user.uid);
-    const unsubscribe = onSnapshot(userDocRef, (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
-        setState(prevState => ({
-          ...prevState,
-          suspicionScore: data.suspicionScore || 0,
-        }));
-      }
+  const queueEvent = useCallback((type: string, description: string) => {
+    eventBufferRef.current.push({
+      type,
+      description,
+      timestamp: new Date().toISOString()
     });
+  }, []);
 
-    return () => unsubscribe();
-  }, [user, firestore]);
+    useEffect(() => {
+        if (!user || !firestore) return;
+
+        const userDocRef = doc(firestore, 'users', user.uid);
+        const unsubscribe = onSnapshot(userDocRef, (doc) => {
+            if (doc.exists()) {
+                const data = doc.data();
+                setUserData(data);
+                setState(prevState => ({
+                    ...prevState,
+                    suspicionScore: data.suspicionScore || 0,
+                    modules: {
+                        face: isMonitoring ? 'ACTIVE' : 'INACTIVE',
+                        object: isMonitoring ? 'ACTIVE' : 'INACTIVE',
+                        audio: (isMonitoring && isAudioEnabled) ? 'ACTIVE' : 'INACTIVE',
+                        multiplePeople: isMonitoring ? 'ACTIVE' : 'INACTIVE',
+                    }
+                }));
+            }
+        });
+
+        return () => unsubscribe();
+    }, [user, firestore, isMonitoring, isAudioEnabled]);
   
   const updateSuspicionScore = useCallback(async (points: number, reason: string) => {
     if (!user || !firestore || !examSessionId) return;
@@ -76,17 +96,25 @@ export function ProctoringDashboard() {
             transaction.update(userDocRef, { suspicionScore: newScore });
         });
 
-        // Log the alert after the transaction is successful
-        const alertsColRef = collection(firestore, 'users', user.uid, 'examSessions', examSessionId, 'alerts');
-        await addDoc(alertsColRef, {
-            examSessionId: examSessionId,
-            message: reason,
-            type: points > 0 ? 'warning' : 'info',
-            scoreImpact: points,
-            timestamp: new Date().toISOString(),
-        });
-
-    } catch (e: any) {
+        // Deduplicate identical alerts within 30 seconds
+        const now = Date.now();
+        if (lastAlertRef.current.reason !== reason || (now - lastAlertRef.current.time > 30000)) {
+            lastAlertRef.current = { reason, time: now };
+            const eventsColRef = collection(firestore, 'users', user.uid, 'examSessions', examSessionId, 'proctoringEvents');
+            await addDoc(eventsColRef, {
+                examSessionId: examSessionId,
+                message: reason,
+                type: points > 0 ? 'warning' : 'info',
+                scoreImpact: points,
+                timestamp: new Date().toISOString(),
+            });
+        }    } catch (e: any) {
+        // If the SDK retries a write after a network timeout, it may throw "Document already exists" for addDoc. This means it actually succeeded.
+        if (e.message && e.message.includes("Document already exists")) {
+            console.warn("Harmless network retry collision in Firestore detected, ignoring.");
+            return;
+        }
+        
         console.error("Suspicion score update failed: ", e);
         if (e.message !== "User document does not exist!") {
             toast({
@@ -98,59 +126,222 @@ export function ProctoringDashboard() {
     }
   }, [user, firestore, examSessionId, toast]);
 
+    const analysisInProgressRef = useRef(false);
+    const retryDelayRef = useRef(0);
+    const lastAlertRef = useRef({ reason: '', time: 0 });
+
+    useEffect(() => {
+        if (!isMonitoring || !examSessionId || !stream || !videoEl) return;
+
+        const analyzeFrame = async () => {
+            if (analysisInProgressRef.current || !videoEl || videoEl.readyState < 2) return;
+
+            if (retryDelayRef.current > 0) {
+                // If we are in a backoff period, skip this interval
+                retryDelayRef.current -= 5000;
+                return;
+            }
+
+            analysisInProgressRef.current = true;
+
+            try {
+                // 1. Capture Frame
+                console.log("[PROCTORING] Capturing frame...");
+                const canvas = document.createElement('canvas');
+                canvas.width = videoEl.videoWidth;
+                canvas.height = videoEl.videoHeight;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    analysisInProgressRef.current = false;
+                    return;
+                }
+                ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+                const base64Image = canvas.toDataURL('image/jpeg', 0.5); // compress
+
+                // 2. Send for Analysis
+                console.log("[PROCTORING] Sending frame for analysis...");
+                const response = await fetch('/api/analyze-proctoring-frame', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ imagePart: base64Image })
+                });
+
+                if (!response.ok) {
+                    if (response.status === 429) {
+                        throw new Error("429 Too Many Requests");
+                    }
+                    throw new Error(`API Error: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                
+                // Reset backoff on success
+                retryDelayRef.current = 0;
+                
+                // 3. Process Result
+                setState(s => {
+                    const nextState = { ...s };
+                    
+                    // Face processing
+                    nextState.faceCount = result.faceCount;
+                    if (result.faceCount === 0) queueEvent("VISION", "No face detected");
+                    else if (result.faceCount > 1) queueEvent("VISION", `Multiple faces detected: ${result.faceCount} faces`);
+                    
+                    // Gaze processing
+                    nextState.gazeScore = result.gazeConfidence;
+                    if (result.gazeDirection === 'AWAY') queueEvent("VISION", `Gaze away - confidence ${result.gazeConfidence}%`);
+                    else if (result.gazeDirection === 'NORMAL') queueEvent("VISION", `Gaze normal - confidence ${result.gazeConfidence}%`);
+
+                    // Object processing
+                    nextState.objectCount = result.detectedObjects.length;
+                    if (result.detectedObjects.length > 0) {
+                        queueEvent("VISION", `Unauthorized object detected - ${result.detectedObjects.join(', ')}`);
+                    }
+
+                    return nextState;
+                });
+
+            } catch (error: any) {
+                if (error.message.includes('429')) {
+                    console.warn("[PROCTORING] AI analysis rate limited (429). Backing off...");
+                    // Exponential backoff
+                    retryDelayRef.current = retryDelayRef.current === 0 ? 10000 : Math.min(retryDelayRef.current * 2, 60000);
+                    queueEvent("SYSTEM", `AI Analysis: Retrying in ${retryDelayRef.current / 1000}s`);
+                } else {
+                    console.error("[PROCTORING] AI analysis failed:", error);
+                    queueEvent("SYSTEM", "AI Analysis: Temporarily unavailable");
+                }
+            } finally {
+                analysisInProgressRef.current = false;
+            }
+        };
+
+        const analysisInterval = setInterval(analyzeFrame, 25000);
+
+        let audioAgent: AudioAgent | null = null;
+        if (isAudioEnabled) {
+            audioAgent = new AudioAgent(() => {
+                setState(s => {
+                    const nextState = { ...s };
+                    nextState.audioEvents = s.audioEvents + 1;
+                    queueEvent("AUDIO", "Suspicious audio detected");
+                    return nextState;
+                });
+            });
+            audioAgent.start(stream);
+        }
+
+        return () => {
+            clearInterval(analysisInterval);
+            if (audioAgent) audioAgent.stop();
+        };
+    }, [isMonitoring, isAudioEnabled, examSessionId, stream, videoEl, queueEvent]);
+
     useEffect(() => {
         if (!isMonitoring || !examSessionId) return;
 
-        const runSimulations = () => {
-            setState(s => {
-                const nextState = { ...s };
-
-                // Face detection simulation
-                const faceRoll = Math.random();
-                if (faceRoll < 0.08 && s.faceCount !== 0) {
-                    nextState.faceCount = 0;
-                    updateSuspicionScore(15, "No face detected");
-                } else if (faceRoll < 0.15 && s.faceCount !== 2) {
-                    nextState.faceCount = 2;
-                    updateSuspicionScore(20, "Multiple faces detected");
-                } else if (faceRoll >= 0.15 && s.faceCount !== 1) {
-                    nextState.faceCount = 1;
-                }
-
-                // Gaze tracking simulation
-                const gazeRoll = Math.random();
-                if (gazeRoll < 0.2) {
-                    if (s.gazeScore < 80) {
-                        updateSuspicionScore(5, "Looking away from screen");
-                    }
-                    nextState.gazeScore = Math.max(0, s.gazeScore - 10);
-                } else {
-                    nextState.gazeScore = Math.min(100, s.gazeScore + 2);
-                }
-
-                // Object detection simulation
-                const unauthorizedObjects = ['phone', 'book', 'tablet', 'notes'];
-                if (Math.random() < 0.05) {
-                    const detectedObject = unauthorizedObjects[Math.floor(Math.random() * unauthorizedObjects.length)];
-                    nextState.objectCount = s.objectCount + 1;
-                    updateSuspicionScore(25, `Unauthorized object (${detectedObject}) detected`);
-                }
-
-                // Audio event simulation
-                if (isAudioEnabled && Math.random() < 0.08) {
-                    nextState.audioEvents = s.audioEvents + 1;
-                    updateSuspicionScore(10, "Suspicious audio detected");
-                }
-                
-                return nextState;
-            });
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                queueEvent("ACTIVITY", "Tab switched or window minimized");
+            }
         };
 
-        const intervalId = setInterval(runSimulations, 2000);
+        const handleCopy = (e: ClipboardEvent) => {
+            e.preventDefault();
+            queueEvent("ACTIVITY", "Attempted to copy content");
+        };
 
+        const handlePaste = (e: ClipboardEvent) => {
+            e.preventDefault();
+            queueEvent("ACTIVITY", "Attempted to paste content");
+        };
+
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        document.addEventListener("copy", handleCopy);
+        document.addEventListener("paste", handlePaste);
+
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+            document.removeEventListener("copy", handleCopy);
+            document.removeEventListener("paste", handlePaste);
+        };
+    }, [isMonitoring, examSessionId, queueEvent]);
+
+    useEffect(() => {
+        if (!isMonitoring || !examSessionId) return;
+
+        const flushBuffer = async () => {
+            const events = [...eventBufferRef.current];
+            if (events.length === 0) return;
+
+            eventBufferRef.current = []; // clear
+
+            try {
+                const response = await fetch('/api/orchestrator', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ events, currentScore: state.suspicionScore })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log("[PROCTORING] Orchestrator result:", result);
+                    const { scoreImpact, message, actionTaken, riskLevel, reasoningSummary } = result;
+                    
+                    if (scoreImpact > 0 || actionTaken !== 'CONTINUE') {
+                        // Log the explicit agent event as requested
+                        if (user && userData && firestore && examSessionId) {
+                            try {
+                                await addDoc(collection(firestore, 'agentEvents'), {
+                                    studentId: user.uid,
+                                    studentName: userData.username || user.email,
+                                    examSessionId: examSessionId,
+                                    examId: examId || null,
+                                    collegeId: userData.collegeId || null,
+                                    divisionId: userData.divisionId || null,
+                                    detectedSignals: events.map(e => e.description),
+                                    riskLevel: riskLevel,
+                                    reasoningSummary: reasoningSummary,
+                                    actionTaken: actionTaken,
+                                    timestamp: new Date().toISOString()
+                                });
+                            } catch (e: any) {
+                                if (e.message && e.message.includes("Document already exists")) {
+                                    console.warn("Harmless network retry collision in Firestore detected, ignoring.");
+                                } else {
+                                    console.error("Failed to log agent event", e);
+                                }
+                            }
+                        }
+
+                        // We also log the risk level and action in the event message
+                        const fullMessage = `${message} [Risk: ${riskLevel}] [Action: ${actionTaken}]`;
+                        await updateSuspicionScore(scoreImpact, fullMessage);
+                        
+                        if (actionTaken === 'WARNING') {
+                             toast({ variant: 'destructive', title: 'WARNING FROM SUPERVISOR', description: reasoningSummary, duration: 8000 });
+                        } else if (actionTaken === 'TERMINATE_ONLY_IF_CONFIGURED_POLICY_ALLOWS') {
+                             toast({ variant: 'destructive', title: 'EXAM TERMINATED', description: 'Your exam has been terminated due to suspicious activity: ' + reasoningSummary, duration: Infinity });
+                             stopMonitoring();
+                        } else if (actionTaken === 'CREATE_ALERT' || actionTaken === 'NOTIFY_FACULTY' || actionTaken === 'ESCALATE') {
+                             // Just log silently or show a mild warning if you want.
+                             // Usually these are just for the dashboard.
+                             if (actionTaken === 'NOTIFY_FACULTY' || actionTaken === 'ESCALATE') {
+                                 toast({ variant: 'destructive', title: 'HIGH RISK ACTIVITY FLAGGED', description: "Your activity is being reviewed by the administration.", duration: 10000 });
+                             }
+                        }
+                    }
+                } else if (response.status === 429) {
+                    toast({ variant: 'destructive', title: 'AI Quota Exceeded', description: 'Google API rate limit hit. Pausing analysis for 15s.' });
+                }
+            } catch (err) {
+                console.error("Failed to call orchestrator", err);
+            }
+        };
+
+        const intervalId = setInterval(flushBuffer, 25000);
         return () => clearInterval(intervalId);
-    }, [isMonitoring, isAudioEnabled, updateSuspicionScore, examSessionId]);
-
+    }, [isMonitoring, examSessionId, state.suspicionScore, updateSuspicionScore]);
 
   const startMonitoring = async () => {
     if (isUserLoading || !user || !firestore) {
@@ -351,11 +542,11 @@ export function ProctoringDashboard() {
 
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-5">
-            <ExamQuestions isExamActive={isMonitoring} />
+            <ExamQuestions isExamActive={isMonitoring} examId={examId} />
         </div>
         
         <div className="lg:col-span-4 flex flex-col gap-4">
-            <VideoFeed stream={stream} isMonitoring={isMonitoring} suspicionScore={state.suspicionScore} hasCameraPermission={hasCameraPermission} />
+            <VideoFeed stream={stream} isMonitoring={isMonitoring} suspicionScore={state.suspicionScore} hasCameraPermission={hasCameraPermission} onVideoReady={setVideoEl} />
             {hasCameraPermission === false && (
                     <AlertBox variant="destructive">
                         <TriangleAlert className="h-4 w-4" />

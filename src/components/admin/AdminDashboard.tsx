@@ -37,6 +37,14 @@ import { useToast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
 import { format } from 'date-fns';
 import { PlagiarismChecker } from '@/components/plagiarism/PlagiarismChecker';
+import { CollegeManager } from '@/components/admin/CollegeManager';
+import { HierarchyManager } from '@/components/admin/HierarchyManager';
+import { FacultyManager } from '@/components/admin/FacultyManager';
+import { StudentManager } from '@/components/admin/StudentManager';
+import { QuestionBankManager } from '@/components/admin/QuestionBankManager';
+import { ExamManager } from '@/components/admin/ExamManager';
+import { AuditLogViewer } from '@/components/admin/AuditLogViewer';
+import { AgentEventsViewer } from '@/components/admin/AgentEventsViewer';
 
 const INITIAL_QUESTION_STATE = { text: '', options: ['', '', '', ''], answer: '' };
 
@@ -261,6 +269,7 @@ export default function AdminDashboard() {
   const [sessionAlerts, setSessionAlerts] = useState<AlertType[]>([]);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [currentUserData, setCurrentUserData] = useState<any>(null);
   
   const [newQuestion, setNewQuestion] = useState(INITIAL_QUESTION_STATE);
   const [isSubmittingQuestion, setIsSubmittingQuestion] = useState(false);
@@ -284,8 +293,13 @@ export default function AdminDashboard() {
         const userDoc = await getDoc(userDocRef);
         if (userDoc.exists()) {
           const userData = userDoc.data();
+          console.log("Authenticated UID:", user.uid);
+          console.log("College Admin profile:", userData);
+          console.log("Resolved collegeId:", userData?.collegeId);
+          
           setCurrentUserRole(userData.role);
-          if (userData.role !== 'admin' && userData.role !== 'faculty') {
+          setCurrentUserData({ ...userData, id: userDoc.id, uid: userDoc.id });
+          if (userData.role !== 'admin' && userData.role !== 'faculty' && userData.role !== 'PLATFORM_ADMIN' && userData.role !== 'COLLEGE_ADMIN' && userData.role !== 'FACULTY') {
             router.replace('/dashboard');
           }
         } else {
@@ -302,18 +316,31 @@ export default function AdminDashboard() {
   const studentsQuery = useMemoFirebase(() => {
     if (!firestore || !user || !currentUserRole) return null;
     
-    if (currentUserRole === 'admin' || currentUserRole === 'faculty') {
-      return query(collection(firestore, "users"), where("role", "==", "student"));
+    if (currentUserRole === 'PLATFORM_ADMIN') {
+        return query(collection(firestore, "users"), where("role", "==", "STUDENT"));
+    }
+    
+    if (currentUserRole === 'COLLEGE_ADMIN' || currentUserRole === 'FACULTY' || currentUserRole === 'admin' || currentUserRole === 'faculty') {
+        if (!currentUserData?.collegeId) return null; // Must have collegeId to query students
+        const constraints: any[] = [
+            where("role", "==", "STUDENT"),
+            where("collegeId", "==", currentUserData.collegeId)
+        ];
+        if (currentUserRole === 'FACULTY' && currentUserData?.divisionId) {
+            constraints.push(where("divisionId", "==", currentUserData.divisionId));
+        }
+        return query(collection(firestore, "users"), ...constraints);
     }
     return null;
-  }, [firestore, user, currentUserRole]);
+  }, [firestore, user, currentUserRole, currentUserData]);
 
   const { data: students, isLoading: isLoadingStudents } = useCollection<Student>(studentsQuery);
   
   const questionsQuery = useMemoFirebase(() => {
-      if (!firestore || !user) return null;
-      return collection(firestore, "questions");
-  }, [firestore, user]);
+      if (!firestore || !user || !currentUserData?.collegeId) return null;
+      if (currentUserRole === 'PLATFORM_ADMIN') return collection(firestore, "questions");
+      return query(collection(firestore, "questions"), where('collegeId', '==', currentUserData.collegeId));
+  }, [firestore, user, currentUserData?.collegeId, currentUserRole]);
   const { data: questions, isLoading: isLoadingQuestions } = useCollection<Question>(questionsQuery);
   
   const submissionsQuery = useMemoFirebase(() => {
@@ -361,9 +388,9 @@ export default function AdminDashboard() {
         }
 
         const sessionDoc = sessionSnapshot.docs[0];
-        const alertsQuery = query(collection(firestore, 'users', student.id, 'examSessions', sessionDoc.id, 'alerts'), orderBy('timestamp', 'asc'));
+        const alertsQuery = query(collection(firestore, 'users', student.id, 'examSessions', sessionDoc.id, 'proctoringEvents'), orderBy('timestamp', 'asc'));
         const alertsSnapshot = await getDocs(alertsQuery);
-        const alerts = alertsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AlertType[];
+        const alerts = alertsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
         setSessionAlerts(alerts);
     } catch (error: any) {
         console.error("Error during student review processing:", error);
@@ -453,14 +480,58 @@ export default function AdminDashboard() {
 
       <main className="flex-1 p-4 md:p-8">
         <Tabs defaultValue="monitoring" className="w-full">
-          <TabsList className="grid w-full grid-cols-6 max-w-5xl">
+          <TabsList className="grid w-full grid-cols-7 max-w-6xl">
+            {(currentUserRole === 'PLATFORM_ADMIN' || currentUserRole === 'admin') && (
+                <TabsTrigger value="colleges">Colleges</TabsTrigger>
+            )}
+            {currentUserRole === 'COLLEGE_ADMIN' && (
+                <>
+                    <TabsTrigger value="hierarchy">Hierarchy</TabsTrigger>
+                    <TabsTrigger value="faculty">Faculty</TabsTrigger>
+                </>
+            )}
+            {(currentUserRole === 'COLLEGE_ADMIN' || currentUserRole === 'FACULTY' || currentUserRole === 'faculty') && (
+                <TabsTrigger value="students">Students</TabsTrigger>
+            )}
             <TabsTrigger value="monitoring">Student Monitoring</TabsTrigger>
-            <TabsTrigger value="questions">Question Bank</TabsTrigger>
+            <TabsTrigger value="agent-events">Agent Events</TabsTrigger>
+            {(currentUserRole === 'FACULTY' || currentUserRole === 'faculty' || currentUserRole === 'admin') && (
+                <>
+                    <TabsTrigger value="question-banks">Question Banks</TabsTrigger>
+                    <TabsTrigger value="exams">Exams</TabsTrigger>
+                </>
+            )}
             <TabsTrigger value="assignments">Assignments</TabsTrigger>
             <TabsTrigger value="studymaterial">Study Material</TabsTrigger>
             <TabsTrigger value="pyqs">PYQs</TabsTrigger>
             <TabsTrigger value="plagiarism">Plagiarism Checker</TabsTrigger>
+            {(currentUserRole === 'PLATFORM_ADMIN' || currentUserRole === 'admin') && (
+                <TabsTrigger value="audit-logs">Audit Logs</TabsTrigger>
+            )}
           </TabsList>
+
+          {(currentUserRole === 'PLATFORM_ADMIN' || currentUserRole === 'admin') && (
+              <TabsContent value="colleges" className="mt-4">
+                  <CollegeManager />
+              </TabsContent>
+          )}
+
+          {currentUserRole === 'COLLEGE_ADMIN' && (
+              <>
+                  <TabsContent value="hierarchy" className="mt-4">
+                      {currentUserData?.collegeId ? <HierarchyManager collegeId={currentUserData.collegeId} /> : <div className="p-8 text-center bg-card rounded-lg border text-muted-foreground">Your account has not been assigned to a college yet. Please contact the Platform Admin.</div>}
+                  </TabsContent>
+                  <TabsContent value="faculty" className="mt-4">
+                      {currentUserData?.collegeId ? <FacultyManager collegeId={currentUserData.collegeId} /> : <div className="p-8 text-center bg-card rounded-lg border text-muted-foreground">Your account has not been assigned to a college yet. Please contact the Platform Admin.</div>}
+                  </TabsContent>
+              </>
+          )}
+
+          {(currentUserRole === 'COLLEGE_ADMIN' || currentUserRole === 'FACULTY' || currentUserRole === 'faculty') && (
+              <TabsContent value="students" className="mt-4">
+                  {currentUserData?.collegeId ? <StudentManager collegeId={currentUserData.collegeId} facultyDivisionId={currentUserData.divisionId} /> : <div className="p-8 text-center bg-card rounded-lg border text-muted-foreground">Your account has not been assigned to a college yet.</div>}
+              </TabsContent>
+          )}
 
           <TabsContent value="monitoring" className="mt-4">
             <Card>
@@ -478,12 +549,20 @@ export default function AdminDashboard() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="questions" className="mt-4">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-1"><Card><CardHeader><CardTitle className="flex items-center gap-2"><PlusCircle /> Add New Question</CardTitle><CardDescription>Create a new question for the exam.</CardDescription></CardHeader><CardContent><form onSubmit={handleAddQuestion} className="space-y-4"><div className="space-y-2"><Label htmlFor="q-text">Question Text</Label><Textarea id="q-text" placeholder="What is 2+2?" value={newQuestion.text} onChange={e => setNewQuestion(p => ({...p, text: e.target.value}))} required /></div>{[0,1,2,3].map(i => (<div key={i} className="space-y-2"><Label htmlFor={`q-opt-${i}`}>Option {i+1}</Label><Input id={`q-opt-${i}`} placeholder={`Option ${i+1}`} value={newQuestion.options[i]} onChange={e => { const o = [...newQuestion.options]; o[i] = e.target.value; setNewQuestion(p => ({...p, options: o})); }} required /></div>))}<div className="space-y-2"><Label htmlFor="q-answer">Correct Answer</Label><Select value={newQuestion.answer} onValueChange={v => setNewQuestion(p => ({...p, answer: v}))}><SelectTrigger id="q-answer"><SelectValue placeholder="Select correct answer" /></SelectTrigger><SelectContent>{newQuestion.options.filter(opt => opt).map(opt => (<SelectItem key={opt} value={opt}>{opt}</SelectItem>))}</SelectContent></Select></div><Button type="submit" className="w-full" disabled={isSubmittingQuestion}>{isSubmittingQuestion && <Loader2 className="animate-spin mr-2" />}{isSubmittingQuestion ? 'Adding...' : 'Add Question'}</Button></form></CardContent></Card></div>
-              <div className="lg:col-span-2"><Card><CardHeader><CardTitle>Existing Questions</CardTitle><CardDescription>List of all questions in the exam.</CardDescription></CardHeader><CardContent><ScrollArea className="h-96"><div className="space-y-4">{isLoadingQuestions ? [...Array(3)].map((_, i) => <Skeleton key={i} className="h-20 w-full" />) : questions && questions.length > 0 ? questions.map((q) => (<div key={q.id} className="p-4 border rounded-md bg-card/50 flex items-start justify-between"><div><p className="font-semibold">{q.text}</p><ul className="list-disc list-inside text-sm text-muted-foreground mt-2">{q.options.map(opt => (<li key={opt} className={cn(q.answer === opt && 'font-bold text-secondary')}>{opt}</li>))}</ul></div><AlertDialog><AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="text-destructive shrink-0"><Trash2 className="w-4 h-4" /></Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete this question?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => handleDeleteQuestion(q.id)} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>)) : <p className="text-center text-muted-foreground py-10">No questions have been added yet.</p>}</div></ScrollArea></CardContent></Card></div>
-            </div>
+          <TabsContent value="agent-events" className="mt-4">
+              {currentUserData ? <AgentEventsViewer user={currentUserData} /> : <div className="p-8 text-center bg-card rounded-lg border text-muted-foreground">Loading user data...</div>}
           </TabsContent>
+
+          {(currentUserRole === 'FACULTY' || currentUserRole === 'faculty' || currentUserRole === 'admin') && currentUserData && (
+              <>
+                  <TabsContent value="question-banks" className="mt-4">
+                      <QuestionBankManager user={currentUserData} />
+                  </TabsContent>
+                  <TabsContent value="exams" className="mt-4">
+                      <ExamManager user={currentUserData} />
+                  </TabsContent>
+              </>
+          )}
           
           <TabsContent value="assignments" className="mt-4">
              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -553,6 +632,12 @@ export default function AdminDashboard() {
             <PlagiarismChecker />
           </TabsContent>
 
+          {(currentUserRole === 'PLATFORM_ADMIN' || currentUserRole === 'admin') && (
+            <TabsContent value="audit-logs" className="mt-4">
+              <AuditLogViewer />
+            </TabsContent>
+          )}
+
         </Tabs>
       </main>
       
@@ -573,7 +658,7 @@ export default function AdminDashboard() {
                             <div>
                                 <h3 className="text-lg font-semibold flex items-center gap-2 mb-3"><TriangleAlert className="text-primary w-5 h-5"/> Key Alerts Log</h3>
                                 {isLoadingDetails ? <Skeleton className="h-20 w-full"/> : 
-                                <div className="space-y-3">{sessionAlerts.length > 0 ? (sessionAlerts).map((alert) => (<div key={alert.id} className="text-sm text-muted-foreground border-l-2 border-destructive pl-3"><p className="font-medium text-foreground">{alert.message}</p><p>Time: {formatTimestamp(alert.timestamp)} | Impact: +{alert.scoreImpact}</p></div>)) : <p className="text-sm text-muted-foreground">No high-priority alerts recorded for the last session.</p>}</div>
+                                <div className="space-y-3">{sessionAlerts.length > 0 ? (sessionAlerts).map((alert: any) => (<div key={alert.id} className="text-sm text-muted-foreground border-l-2 border-destructive pl-3"><p className="font-medium text-foreground">{alert.message}</p><p>Time: {formatTimestamp(alert.timestamp)} | Impact: +{alert.scoreImpact} | Action: {alert.actionTaken || 'N/A'} | Risk: {alert.riskLevel || 'N/A'}</p></div>)) : <p className="text-sm text-muted-foreground">No high-priority events recorded for the last session.</p>}</div>
                                 }
                             </div>
                         </div>

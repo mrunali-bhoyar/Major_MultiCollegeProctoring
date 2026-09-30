@@ -40,7 +40,7 @@ export default function SidePanel(props: SidePanelProps) {
   const alertsQuery = useMemoFirebase(() => {
     if (!firestore || !user || !examSessionId) return null;
     return query(
-      collection(firestore, 'users', user.uid, 'examSessions', examSessionId, 'alerts'),
+      collection(firestore, 'users', user.uid, 'examSessions', examSessionId, 'proctoringEvents'),
       orderBy('timestamp', 'desc'),
       limit(10)
     );
@@ -50,7 +50,18 @@ export default function SidePanel(props: SidePanelProps) {
 
   const formatTimestamp = (isoString: string) => {
       try {
-        return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const date = new Date(isoString);
+        return new Intl.DateTimeFormat('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          year: 'numeric',
+          month: 'short',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+          timeZoneName: 'short'
+        }).format(date);
       } catch (e) {
           return "Invalid time"
       }
@@ -84,7 +95,7 @@ export default function SidePanel(props: SidePanelProps) {
           <h3 className="flex items-center gap-2 text-lg font-semibold mb-3">
             <Bell className="w-6 h-6 text-primary animate-pulse" /> Recent Alerts
           </h3>
-          <div className="space-y-3 h-64 flex flex-col-reverse overflow-hidden">
+          <div className="space-y-3 h-64 flex flex-col overflow-hidden">
             <AnimatePresence initial={false}>
               {alerts && alerts.map((alert) => (
                 <motion.div
@@ -98,7 +109,14 @@ export default function SidePanel(props: SidePanelProps) {
                   )}
                 >
                   <div className="flex justify-between items-start">
-                    <p className="text-sm font-medium pr-2">{alert.message}</p>
+                    <div className="flex flex-col pr-2">
+                      <p className="text-sm font-medium">{alert.message}</p>
+                      {alert.scoreImpact > 0 && (
+                        <span className="text-xs font-semibold text-destructive mt-1">
+                          Suspicion: +{alert.scoreImpact}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-xs text-muted-foreground whitespace-nowrap">{formatTimestamp(alert.timestamp)}</span>
                   </div>
                 </motion.div>

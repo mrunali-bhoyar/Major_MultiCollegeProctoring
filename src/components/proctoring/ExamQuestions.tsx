@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { doc, updateDoc, collection } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import type { Question } from '@/lib/types';
@@ -16,7 +16,7 @@ import { Skeleton } from '../ui/skeleton';
 
 const EXAM_DURATION_MINUTES = 15;
 
-export default function ExamQuestions({ isExamActive }: { isExamActive: boolean }) {
+export default function ExamQuestions({ isExamActive, examId }: { isExamActive: boolean, examId?: string | null }) {
   const [timeLeft, setTimeLeft] = useState(EXAM_DURATION_MINUTES * 60);
   const [answers, setAnswers] = useState<{ [key: string]: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,9 +26,26 @@ export default function ExamQuestions({ isExamActive }: { isExamActive: boolean 
   const firestore = useFirestore();
   const { toast } = useToast();
 
+  const [exam, setExam] = useState<any>(null);
+
+  useEffect(() => {
+    if (firestore && examId) {
+      import('firebase/firestore').then(({ doc, getDoc }) => {
+          getDoc(doc(firestore, 'exams', examId)).then(d => {
+              if (d.exists()) {
+                  setExam(d.data());
+                  if (d.data().duration) {
+                      setTimeLeft(d.data().duration * 60);
+                  }
+              }
+          });
+      });
+    }
+  }, [firestore, examId]);
+
   const questionsQuery = useMemoFirebase(() => 
-    firestore && user ? collection(firestore, 'questions') : null,
-    [firestore, user]
+    firestore && user && exam?.questionBankId && exam?.collegeId ? query(collection(firestore, 'questions'), where('questionBankId', '==', exam.questionBankId), where('collegeId', '==', exam.collegeId)) : null,
+    [firestore, user, exam?.questionBankId, exam?.collegeId]
   );
   const { data: questions, isLoading: isLoadingQuestions } = useCollection<Question>(questionsQuery);
 
@@ -94,7 +111,7 @@ export default function ExamQuestions({ isExamActive }: { isExamActive: boolean 
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Demo Exam Questions</CardTitle>
+        <CardTitle>{exam ? exam.title : "Demo Exam Questions"}</CardTitle>
         <div className="text-lg font-mono font-semibold bg-primary text-primary-foreground px-3 py-1 rounded-md">
           {formatTime(timeLeft)}
         </div>

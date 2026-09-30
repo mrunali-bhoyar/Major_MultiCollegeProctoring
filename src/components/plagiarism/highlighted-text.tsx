@@ -3,8 +3,8 @@
 import React from 'react';
 
 const HighlightedText = ({ text, type }: { text: string, type: 'plagiarism' | 'ai' }) => {
-  const plagiarismRegex = /<<PLAGIARISM_START>>(.*?)<<PLAGIARISM_END>>/gs;
-  const aiRegex = /<<AI_START>>(.*?)<<AI_END>>/gs;
+  const plagiarismRegex = /<<PLAGIARISM_START>>([\s\S]*?)<<PLAGIARISM_END>>/g;
+  const aiRegex = /<<AI_START>>([\s\S]*?)<<AI_END>>/g;
 
   const regex = type === 'plagiarism' ? plagiarismRegex : aiRegex;
   const className = type === 'plagiarism' ? 'bg-destructive/20' : 'bg-accent/20';

@@ -9,17 +9,21 @@ interface VideoFeedProps {
   suspicionScore: number;
   hasCameraPermission: boolean | null;
   stream: MediaStream | null;
+  onVideoReady?: (video: HTMLVideoElement) => void;
 }
 
-const VideoFeed = ({ isMonitoring, suspicionScore, hasCameraPermission, stream }: VideoFeedProps) => {
+const VideoFeed = ({ isMonitoring, suspicionScore, hasCameraPermission, stream, onVideoReady }: VideoFeedProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
+      if (onVideoReady) {
+        onVideoReady(videoRef.current);
+      }
     }
-  }, [stream]);
+  }, [stream, onVideoReady]);
 
   useEffect(() => {
     const videoEl = videoRef.current;

@@ -46,7 +46,12 @@ service cloud.firestore {
      */
     function isPrivilegedUser() {
       let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      return isSignedIn() && userDoc != null && ('role' in userDoc.data) && (userDoc.data.role == 'admin' || userDoc.data.role == 'faculty');
+      return isSignedIn() && userDoc != null && ('role' in userDoc.data) && (userDoc.data.role == 'admin' || userDoc.data.role == 'faculty' || userDoc.data.role == 'FACULTY' || userDoc.data.role == 'COLLEGE_ADMIN' || userDoc.data.role == 'PLATFORM_ADMIN');
+    }
+
+    function isPlatformAdmin() {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return isSignedIn() && userDoc != null && ('role' in userDoc.data) && (userDoc.data.role == 'PLATFORM_ADMIN' || userDoc.data.role == 'admin');
     }
 
     /**
@@ -83,7 +88,7 @@ service cloud.firestore {
      */
     function areUserFieldsImmutable() {
       let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
-      return !changedKeys.hasAny(['id', 'role']);
+      return !changedKeys.hasAny(['id', 'role', 'collegeId', 'departmentId', 'branchId', 'yearId', 'divisionId', 'facultyId']);
     }
 
     /**
@@ -125,9 +130,9 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get: if isSignedIn() && isOwnerOrPrivileged(userId);
-      allow list: if isSignedIn() && isPrivilegedUser();
-      allow create: if isSignedIn() && isOwner(userId) && isCreatingValidUser(userId);
-      allow update: if isSignedIn() && isOwnerOrPrivileged(userId) && isExistingDoc() && areUserFieldsImmutable();
+      allow list: if isSignedIn() && (isPlatformAdmin() || (isPrivilegedUser() && resource.data.collegeId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.collegeId));
+      allow create: if isSignedIn() && (isOwner(userId) || isPrivilegedUser()) && isCreatingValidUser(userId);
+      allow update: if isSignedIn() && isOwnerOrPrivileged(userId) && isExistingDoc() && (isPlatformAdmin() || areUserFieldsImmutable());
       allow delete: if isSignedIn() && isOwnerOrPrivileged(userId) && isExistingDoc();
     }
 
@@ -138,7 +143,7 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isOwnerOrPrivileged(userId) && isExistingDoc();
     }
 
-    match /users/{userId}/examSessions/{examSessionId}/alerts/{alertId} {
+    match /users/{userId}/examSessions/{examSessionId}/proctoringEvents/{eventId} {
       allow get, list, create, update, delete: if isSignedIn() && isOwnerOrPrivileged(userId);
     }
     
@@ -146,9 +151,49 @@ service cloud.firestore {
       allow get, list, create, update, delete: if isSignedIn() && isOwnerOrPrivileged(userId);
     }
 
-    match /questions/{questionId} {
+    match /users/{userId}/examSessions/{examSessionId}/alerts/{alertId} {
+      allow get, list, create, update, delete: if isSignedIn() && isOwnerOrPrivileged(userId);
+    }
+
+    match /colleges/{collegeId} {
       allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isPrivilegedUser() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'PLATFORM_ADMIN');
+    }
+
+    match /departments/{departmentId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isPrivilegedUser() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'COLLEGE_ADMIN');
+    }
+
+    match /branches/{branchId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isPrivilegedUser() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'COLLEGE_ADMIN');
+    }
+
+    match /divisions/{divisionId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isPrivilegedUser() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'COLLEGE_ADMIN');
+    }
+
+    match /questions/{questionId} {
+      allow read: if isSignedIn() && (isPrivilegedUser() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.collegeId == resource.data.collegeId);
       allow write: if isSignedIn() && isPrivilegedUser();
+    }
+
+    match /questionBanks/{qbId} {
+      allow read: if isSignedIn() && (isPrivilegedUser() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.collegeId == resource.data.collegeId);
+      allow write: if isSignedIn() && isPrivilegedUser();
+    }
+
+    match /exams/{examId} {
+      allow read: if isSignedIn() && (isPrivilegedUser() || (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.collegeId == resource.data.collegeId && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.divisionId == resource.data.divisionId));
+      allow write: if isSignedIn() && isPrivilegedUser();
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isPlatformAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Logs are immutable
     }
 
     match /studyMaterials/{materialId} {
@@ -171,6 +216,17 @@ service cloud.firestore {
       allow create: if isSignedIn() && isCreatingOwnSubmission();
       allow update: if isSignedIn() && canUpdateSubmission();
       allow delete: if isSignedIn() && isPrivilegedUser();
+    }
+
+    match /agentEvents/{eventId} {
+      allow read: if isSignedIn() && isPrivilegedUser();
+      allow create: if isSignedIn() && request.resource.data.studentId == request.auth.uid;
+    }
+
+    match /invitations/{invitationId} {
+      allow create: if isSignedIn() && (isPlatformAdmin() || (isPrivilegedUser() && request.resource.data.collegeId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.collegeId));
+      allow read: if true;
+      allow update: if true;
     }
   }
 }

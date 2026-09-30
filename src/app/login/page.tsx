@@ -21,6 +21,7 @@ import { useAuth, useUser } from '@/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { logAuditAction } from '@/lib/audit';
 
 function LoginForm() {
   const router = useRouter();
@@ -40,7 +41,7 @@ function LoginForm() {
       const userDoc = await getDoc(userDocRef);
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        if (userData.role === 'admin' || userData.role === 'faculty') {
+        if (userData.role === 'PLATFORM_ADMIN' || userData.role === 'COLLEGE_ADMIN' || userData.role === 'FACULTY' || userData.role === 'admin' || userData.role === 'faculty') {
           router.push('/admin-dashboard');
         } else {
           router.push('/dashboard');
@@ -56,10 +57,20 @@ function LoginForm() {
 
   useEffect(() => {
     if (user && !isUserLoading) {
+      if (!user.emailVerified) {
+        toast({
+          variant: "destructive",
+          title: "Email Not Verified",
+          description: "Please verify your email before logging in.",
+        });
+        auth.signOut();
+        setIsLoading(false);
+        return;
+      }
       setIsLoading(true);
       checkUserRoleAndRedirect(user);
     }
-  }, [user, isUserLoading, checkUserRoleAndRedirect]);
+  }, [user, isUserLoading, checkUserRoleAndRedirect, auth, toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,6 +84,9 @@ function LoginForm() {
     }
     setIsLoading(true);
     signInWithEmailAndPassword(auth, email, password)
+      .then(async (userCredential) => {
+          await logAuditAction(userCredential.user.uid, userCredential.user.email || '', 'LOGIN', 'User logged in successfully');
+      })
       .catch((error: any) => {
         let description = "An unexpected error occurred.";
         if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
