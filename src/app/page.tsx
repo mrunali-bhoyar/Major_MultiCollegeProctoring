@@ -26,6 +26,7 @@ import {
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function LandingPage() {
   const cardVariants = {
@@ -87,7 +88,8 @@ export default function LandingPage() {
             MyProctor<span className="text-secondary">.ai</span>
           </span>
         </Link>
-        <div className="flex gap-4">
+        <div className="flex items-center gap-3">
+          <ThemeToggle />
           <Button asChild variant="ghost">
             <Link href="/login">Login</Link>
           </Button>

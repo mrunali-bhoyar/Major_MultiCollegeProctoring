@@ -45,6 +45,9 @@ import { QuestionBankManager } from '@/components/admin/QuestionBankManager';
 import { ExamManager } from '@/components/admin/ExamManager';
 import { AuditLogViewer } from '@/components/admin/AuditLogViewer';
 import { AgentEventsViewer } from '@/components/admin/AgentEventsViewer';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { ContactSupportCard } from '@/components/support/ContactSupportCard';
+import { SupportInbox } from '@/components/support/SupportInbox';
 
 const INITIAL_QUESTION_STATE = { text: '', options: ['', '', '', ''], answer: '' };
 
@@ -472,15 +475,16 @@ export default function AdminDashboard() {
           <Shield className="w-8 h-8 text-primary" />
           <h1 className="text-2xl font-bold font-headline">MyProctor.ai Admin</h1>
         </div>
-        <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">{auth.currentUser?.email}</span>
+        <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground hidden sm:inline">{auth.currentUser?.email}</span>
+            <ThemeToggle />
             <Button variant="outline" size="sm" onClick={handleLogout}>Logout</Button>
         </div>
       </header>
 
       <main className="flex-1 p-4 md:p-8">
         <Tabs defaultValue="monitoring" className="w-full">
-          <TabsList className="grid w-full grid-cols-7 max-w-6xl">
+          <TabsList className="flex flex-wrap h-auto gap-1.5 w-full max-w-6xl p-1.5 bg-muted/60 rounded-lg">
             {(currentUserRole === 'PLATFORM_ADMIN' || currentUserRole === 'admin') && (
                 <TabsTrigger value="colleges">Colleges</TabsTrigger>
             )}
@@ -508,6 +512,7 @@ export default function AdminDashboard() {
             {(currentUserRole === 'PLATFORM_ADMIN' || currentUserRole === 'admin') && (
                 <TabsTrigger value="audit-logs">Audit Logs</TabsTrigger>
             )}
+            <TabsTrigger value="support">Get in Touch</TabsTrigger>
           </TabsList>
 
           {(currentUserRole === 'PLATFORM_ADMIN' || currentUserRole === 'admin') && (
@@ -637,6 +642,32 @@ export default function AdminDashboard() {
               <AuditLogViewer />
             </TabsContent>
           )}
+
+          <TabsContent value="support" className="mt-4">
+              {currentUserRole === 'COLLEGE_ADMIN' ? (
+                  <ContactSupportCard 
+                      recipientType="ADMIN"
+                      recipientLabel="Platform Admin"
+                      senderRole="COLLEGE_ADMIN"
+                      senderEmail={auth.currentUser?.email || ''}
+                      senderName={currentUserData?.name || auth.currentUser?.displayName || 'College Admin'}
+                      senderId={auth.currentUser?.uid}
+                      collegeId={currentUserData?.collegeId}
+                  />
+              ) : (currentUserRole === 'FACULTY' || currentUserRole === 'faculty') ? (
+                  <ContactSupportCard 
+                      recipientType="COLLEGE"
+                      recipientLabel="College Administration"
+                      senderRole="FACULTY"
+                      senderEmail={auth.currentUser?.email || ''}
+                      senderName={currentUserData?.name || auth.currentUser?.displayName || 'Faculty Member'}
+                      senderId={auth.currentUser?.uid}
+                      collegeId={currentUserData?.collegeId}
+                  />
+              ) : (
+                  <SupportInbox />
+              )}
+          </TabsContent>
 
         </Tabs>
       </main>

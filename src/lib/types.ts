@@ -39,6 +39,8 @@ export type Question = {
     text: string;
     options: string[];
     answer: string;
+    type?: 'MCQ' | 'THEORY';
+    modelAnswer?: string;
     questionBankId?: string;
     marks?: number;
     subject?: string;
@@ -188,6 +190,7 @@ export type UserProfile = {
     departmentId?: string;
     branchId?: string;
     year?: number;
+    yearId?: string | number;
     divisionId?: string;
     status: 'ACTIVE' | 'INACTIVE' | 'PENDING';
     createdAt: string;

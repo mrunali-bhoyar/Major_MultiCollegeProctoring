@@ -11,6 +11,8 @@ import { useEffect, useState } from 'react';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, where, getDoc, doc } from 'firebase/firestore';
 import { Exam } from '@/lib/types';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { ContactSupportCard } from '@/components/support/ContactSupportCard';
 
 const FeatureCard = ({ title, description, icon, href }: { title: string, description: string, icon: React.ReactNode, href: string }) => (
     <Link href={href} className="block hover:shadow-lg transition-shadow duration-300 rounded-lg">
@@ -75,8 +77,9 @@ export default function DashboardPage() {
                 <Shield className="w-8 h-8 text-primary" />
                 <h1 className="text-2xl font-bold font-headline">MyProctor.ai Dashboard</h1>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground hidden sm:inline">{user?.email}</span>
+                    <ThemeToggle />
                     <Button variant="outline" size="sm" onClick={handleLogout}>Logout</Button>
                 </div>
             </header>
@@ -147,6 +150,18 @@ export default function DashboardPage() {
                         description="Review past exam papers for practice." 
                         icon={<History className="w-6 h-6"/>} 
                         href="/pyqs" 
+                    />
+                </div>
+
+                <div className="mt-8">
+                    <ContactSupportCard 
+                        recipientType="COLLEGE"
+                        recipientLabel="College Administration"
+                        senderRole="STUDENT"
+                        senderEmail={user?.email || ''}
+                        senderName={userData?.name || user?.displayName || 'Student'}
+                        senderId={user?.uid}
+                        collegeId={userData?.collegeId}
                     />
                 </div>
             </main>

@@ -227,6 +227,13 @@ service cloud.firestore {
       allow create: if isSignedIn() && (isPlatformAdmin() || (isPrivilegedUser() && request.resource.data.collegeId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.collegeId));
       allow read: if true;
       allow update: if true;
+      allow delete: if isSignedIn() && (isPlatformAdmin() || isPrivilegedUser());
+    }
+
+    match /supportMessages/{messageId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn();
+      allow update, delete: if isSignedIn() && (isPlatformAdmin() || isPrivilegedUser());
     }
   }
 }

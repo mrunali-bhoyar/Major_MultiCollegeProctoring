@@ -13,7 +13,7 @@ const OrchestratorInputSchema = z.object({
   currentScore: z.number(),
 });
 
-const OrchestratorOutputSchema = z.object({
+export const OrchestratorOutputSchema = z.object({
   scoreImpact: z.number().describe('The number of points to add to the suspicion score (0 to 100).'),
   message: z.string().describe('A concise alert message describing the fused reasoning (e.g., "Multiple faces and talking detected").'),
   riskLevel: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).describe('The overall risk level based on the current events and history.'),

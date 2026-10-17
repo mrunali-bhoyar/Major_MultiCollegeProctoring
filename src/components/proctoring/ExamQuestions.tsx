@@ -13,6 +13,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 import type { Question } from '@/lib/types';
 import { Skeleton } from '../ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 
 const EXAM_DURATION_MINUTES = 15;
 
@@ -133,16 +135,40 @@ export default function ExamQuestions({ isExamActive, examId }: { isExamActive: 
               </div>
             ) : questions && questions.length > 0 ? (
               questions.map((q, index) => (
-                <div key={q.id}>
-                  <p className="font-medium mb-3">{index + 1}. {q.text}</p>
-                  <RadioGroup onValueChange={(value) => handleAnswerChange(q.id, value)} disabled={!isExamActive || submitted || isSubmitting}>
-                    {q.options.map((option) => (
-                      <div key={option} className="flex items-center space-x-2">
-                        <RadioGroupItem value={option} id={`${q.id}-${option}`} />
-                        <Label htmlFor={`${q.id}-${option}`}>{option}</Label>
-                      </div>
-                    ))}
-                  </RadioGroup>
+                <div key={q.id} className="p-4 border rounded-lg bg-card/50 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-medium">{index + 1}. {q.text}</p>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Badge variant="outline" className="text-[10px]">
+                        {q.type === 'THEORY' || (!q.options || q.options.length === 0) ? 'Theory' : 'MCQ'}
+                      </Badge>
+                      {q.marks && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          {q.marks} {q.marks === 1 ? 'Mark' : 'Marks'}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  {q.options && q.options.length > 0 ? (
+                    <RadioGroup onValueChange={(value) => handleAnswerChange(q.id, value)} disabled={!isExamActive || submitted || isSubmitting}>
+                      {q.options.map((option) => (
+                        <div key={option} className="flex items-center space-x-2">
+                          <RadioGroupItem value={option} id={`${q.id}-${option}`} />
+                          <Label htmlFor={`${q.id}-${option}`}>{option}</Label>
+                        </div>
+                      ))}
+                    </RadioGroup>
+                  ) : (
+                    <Textarea 
+                      placeholder="Write your theory answer here..." 
+                      rows={4}
+                      value={answers[q.id] || ''}
+                      onChange={(e) => handleAnswerChange(q.id, e.target.value)}
+                      disabled={!isExamActive || submitted || isSubmitting}
+                      className="text-sm bg-background"
+                    />
+                  )}
                 </div>
               ))
             ) : (

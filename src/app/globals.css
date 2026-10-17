@@ -4,6 +4,38 @@
 
 @layer base {
   :root {
+    --background: 210 20% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 215 39% 47%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 175 100% 35%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 210 30% 93%;
+    --muted-foreground: 215 16% 45%;
+
+    --accent: 210 30% 93%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 215 39% 47%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
     --background: 222 47% 11%; /* #121826 */
     --foreground: 210 40% 98%;
 
@@ -28,31 +60,6 @@
     --destructive: 0 100% 71%; /* #FF6B6B */
     --destructive-foreground: 0 0% 3.9%;
 
-    --border: 222 37% 25%;
-    --input: 222 37% 25%;
-    --ring: 175 100% 39%;
-
-    --radius: 0.5rem;
-  }
-
-  .dark {
-    /* Same as light theme for this project */
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    --card: 222 37% 15%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 11%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 215 39% 47%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 175 100% 39%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 222 37% 20%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 175 100% 39%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 100% 71%;
-    --destructive-foreground: 0 0% 3.9%;
     --border: 222 37% 25%;
     --input: 222 37% 25%;
     --ring: 175 100% 39%;

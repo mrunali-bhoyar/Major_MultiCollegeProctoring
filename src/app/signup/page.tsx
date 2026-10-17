@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -19,9 +19,11 @@ import { Shield, Loader2 } from 'lucide-react';
 import { useAuth, useFirestore } from '@/firebase';
 import { setDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
-export default function SignupPage() {
+function SignupForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const auth = useAuth();
   const firestore = useFirestore();
@@ -32,6 +34,15 @@ export default function SignupPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [invitationCode, setInvitationCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    const codeParam = searchParams.get('code');
+    const emailParam = searchParams.get('email');
+    const nameParam = searchParams.get('name');
+    if (codeParam) setInvitationCode(codeParam);
+    if (emailParam) setEmail(emailParam);
+    if (nameParam) setUsername(nameParam);
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,6 +137,9 @@ export default function SignupPage() {
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-background p-4 relative overflow-hidden">
+        <div className="absolute top-5 right-5 z-20">
+          <ThemeToggle />
+        </div>
         {/* Background blobs */}
         <div className="absolute top-0 -left-40 w-96 h-96 bg-primary/20 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob"></div>
         <div className="absolute top-0 -right-40 w-96 h-96 bg-blue-400/20 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000"></div>
@@ -181,5 +195,17 @@ export default function SignupPage() {
             </Card>
         </div>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    }>
+      <SignupForm />
+    </Suspense>
   );
 }

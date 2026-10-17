@@ -22,6 +22,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { logAuditAction } from '@/lib/audit';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 function LoginForm() {
   const router = useRouter();
@@ -138,7 +139,10 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 md:p-12 lg:p-24 bg-background">
+    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8 md:p-12 lg:p-24 bg-background relative">
+      <div className="absolute top-5 right-5 z-20">
+        <ThemeToggle />
+      </div>
       <div className="flex flex-col items-center justify-center w-full max-w-md">
         <div className="flex items-center gap-4 mb-8">
             <Shield className="w-12 h-12 text-primary" />
